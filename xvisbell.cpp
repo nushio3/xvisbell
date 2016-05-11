@@ -31,13 +31,15 @@
 #include <sys/select.h>
 #include <sys/time.h>
 
+using namespace std;
+
 const struct timeval window_timeout = {0, 100000};
 
 // -1 means for w or h means screen width or height
 struct {
   int x, y;
   int w, h;
-} geometry = {0, 0, -1, 16};
+} geometry = {0, 0, -1, -1};
 
 bool operator<(const struct timeval & a,
                const struct timeval & b) {
@@ -104,7 +106,7 @@ int main() {
     throw std::runtime_error("XkbQueryExtension() error");
   }
 
-  XkbSelectEvents(dpy, XkbUseCoreKbd, XkbBellNotifyMask, XkbBellNotifyMask);
+  //// XkbSelectEvents(dpy, XkbUseCoreKbd, XkbBellNotifyMask, XkbBellNotifyMask);
 
   unsigned int auto_ctrls, auto_values;
   auto_ctrls = auto_values = XkbAudibleBellMask;
@@ -132,6 +134,7 @@ int main() {
                            CWBackPixel | CWOverrideRedirect | CWSaveUnder,
                            &attrs);
 
+
   while (true) {
     struct timeval tv, *wait_tv = nullptr;
 
@@ -155,9 +158,9 @@ int main() {
 
     // we could erroneously error out due to EINTR
     // not handling for now
-    if (select(x11_fd + 1, &in_fds, nullptr, nullptr, wait_tv) < 0) {
-      throw std::runtime_error("select() error!");
-    }
+    //// if (select(x11_fd + 1, &in_fds, nullptr, nullptr, wait_tv) < 0) {
+    ////   throw std::runtime_error("select() error!");
+    //// }
 
     if (timeout_is_set) {
       struct timeval cur_time;
@@ -165,12 +168,31 @@ int main() {
         throw std::runtime_error("getttimeofday() error!");
       }
 
+      //return 0;
       if (future_wakeup < cur_time) {
         // timeout fired
         XUnmapWindow(dpy, win);
         timeout_is_set = false;
+        while (XPending(dpy)) {
+          XEvent ev;
+          XNextEvent(dpy, &ev);
+        }
+        return 0;
+
       }
     }
+
+      XMapRaised(dpy, win);
+
+      // reset timeout
+      if (!timeout_is_set){
+      timeout_is_set = true;
+      if (gettimeofday(&future_wakeup, nullptr) < 0) {
+        throw std::runtime_error("getttimeofday() error!");
+      }
+      future_wakeup += window_timeout;
+      }
+      continue;
 
     while (XPending(dpy)) {
       XEvent ev;
@@ -179,6 +201,7 @@ int main() {
       // TODO: handle resize events on root window
 
       // TODO: this reinterpret cast is not good
+
       if (reinterpret_cast<XkbEvent *>(&ev)->any.xkb_type != XkbBellNotify) {
         continue;
       }
@@ -197,4 +220,3 @@ int main() {
     }
   }
 }
-
